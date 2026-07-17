@@ -1,49 +1,361 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Universal AI Client</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #fff; padding: 20px; text-align: center; }
-        button { padding: 15px; margin-top: 20px; font-size: 16px; border-radius: 8px; background: #FF5722; color: white; border: none; font-weight: bold;}
-        #response { margin-top: 30px; font-family: monospace; background: #1e1e1e; padding: 15px; border-radius: 5px;}
+        :root {
+            --bg-main: #121212;
+            --bg-surface: #1e1e1e;
+            --bg-input: #2a2a2a;
+            --text-main: #ffffff;
+            --text-muted: #aaaaaa;
+            --accent: #ff5722;
+            --accent-hover: #e64a19;
+            --border: #333333;
+            --reasoning-bg: #1a2332;
+            --reasoning-border: #2b3a54;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Top Bar & Profile Selectors */
+        header { background: var(--bg-surface); padding: 12px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+        select { flex: 1; padding: 10px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border); border-radius: 6px; font-size: 14px; outline: none; }
+        button { padding: 10px 14px; font-weight: bold; font-size: 14px; border: none; border-radius: 6px; background: var(--accent); color: white; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: var(--accent-hover); }
+        button.secondary { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-main); }
+        button.danger { background: #b71c1c; }
+
+        /* App View Grid */
+        main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+        /* Configuration Panel Overlay */
+        #configPanel { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-main); z-index: 10; padding: 16px; overflow-y: auto; display: none; flex-direction: column; gap: 14px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-row { display: flex; gap: 10px; }
+        .form-row .form-group { flex: 1; }
+        label { font-size: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+        input, textarea { padding: 10px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border); border-radius: 6px; font-size: 14px; width: 100%; outline: none; font-family: inherit; }
+        textarea.code-area { font-family: monospace; font-size: 13px; height: 140px; resize: vertical; }
+
+        /* Chat View Window */
+        #chatContainer { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+        .message { max-width: 85%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; font-size: 15px; word-break: break-word; }
+        .message.user { background: var(--accent); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .message.assistant { background: var(--bg-surface); align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid var(--border); }
+        
+        /* Thinking / Reasoning Block */
+        .reasoning-block { background: var(--reasoning-bg); border-left: 3px solid var(--reasoning-border); padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; font-size: 13px; color: #b0c4de; font-family: monospace; white-space: pre-wrap; }
+        .reasoning-title { font-weight: bold; font-size: 11px; text-transform: uppercase; color: #5f9ea0; margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
+
+        /* Input Area Bar */
+        #inputBar { background: var(--bg-surface); padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; }
+        #messageInput { flex: 1; height: 42px; border-radius: 20px; padding: 0 16px; background: var(--bg-input); }
+        #sendBtn { height: 42px; width: 42px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
-    <h2>Universal AI Environment</h2>
-    <p>Local Native Wrapper Active</p>
-    
-    <button onclick="testStorage()">Test Local Database</button>
-    <div id="response">Awaiting test...</div>
+
+    <header>
+        <select id="profileSelect" onchange="handleProfileChange()">
+            <option value="">-- Choose Profile --</option>
+        </select>
+        <button onclick="toggleConfig(true)" class="secondary">⚙️ Config</button>
+    </header>
+
+    <main>
+        <!-- Configuration Panel Component -->
+        <div id="configPanel">
+            <h3 id="configTitle">Create AI Engine Profile</h3>
+            
+            <div class="form-group">
+                <label>Profile Display Name</label>
+                <input type="text" id="cfgName" placeholder="e.g., OpenRouter Gemma Free">
+            </div>
+
+            <div class="form-group">
+                <label>Target API Endpoint Base URL</label>
+                <input type="text" id="cfgUrl" placeholder="https://openrouter.ai/api/v1/chat/completions">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Target Model Identification String</label>
+                    <input type="text" id="cfgModel" placeholder="google/gemma-4-31b-it:free">
+                </div>
+                <div class="form-group">
+                    <label>Secret API Key Provider Token</label>
+                    <input type="password" id="cfgKey" placeholder="Paste your API key here">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>HTTP Headers Definition (Valid JSON)</label>
+                <textarea id="cfgHeaders" class="code-area">{\n  "Authorization": "Bearer {{API_KEY}}",\n  "HTTP-Referer": "https://myapp.local",\n  "X-Title": "Universal AI Client"\n}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Raw Dynamic JSON Payload Structure Template</label>
+                <textarea id="cfgTemplate" class="code-area">{\n  "model": "{{MODEL}}",\n  "messages": {{MESSAGES}},\n  "stream": {{STREAM}},\n  "reasoning": {\n    "enabled": true\n  }\n}</textarea>
+            </div>
+
+            <div class="form-row" style="align-items: center; margin-top: 5px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; text-transform: none;">
+                    <input type="checkbox" id="cfgStream" checked style="width: auto;"> Enforce Operational Stream Mode
+                </label>
+            </div>
+
+            <div class="form-row" style="margin-top: 15px;">
+                <button onclick="saveProfile()" style="flex: 2;">Save Configuration</button>
+                <button onclick="deleteProfile()" id="deleteBtn" class="danger hidden">Delete</button>
+                <button onclick="toggleConfig(false)" class="secondary">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Chat View Area Container Component -->
+        <div id="chatContainer"></div>
+
+        <!-- System Chat Input Component -->
+        <div id="inputBar">
+            <input type="text" id="messageInput" placeholder="Type message..." onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button id="sendBtn" onclick="sendMessage()">➔</button>
+        </div>
+    </main>
 
     <script>
-        function logMsg(msg) {
-            document.getElementById('response').innerText = msg;
+        let db;
+        let currentProfileId = null;
+        let activeProfile = null;
+        let conversationHistory = [];
+
+        // 1. Storage Pipeline: Connect IndexedDB
+        const dbRequest = indexedDB.open("UniversalEngineDB", 1);
+        dbRequest.onupgradeneeded = (e) => {
+            db = e.target.result;
+            if (!db.objectStoreNames.contains("profiles")) {
+                db.createObjectStore("profiles", { keyPath: "id" });
+            }
+        };
+        dbRequest.onsuccess = (e) => {
+            db = e.target.result;
+            loadProfiles();
+        };
+
+        function loadProfiles() {
+            const transaction = db.transaction("profiles", "readonly");
+            const store = transaction.objectStore("profiles");
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                const select = document.getElementById("profileSelect");
+                select.innerHTML = '<option value="">-- Choose Profile --</option>';
+                request.result.forEach(profile => {
+                    const opt = document.createElement("option");
+                    opt.value = profile.id;
+                    opt.textContent = profile.displayName;
+                    select.appendChild(opt);
+                });
+                if (currentProfileId) select.value = currentProfileId;
+            };
         }
 
-        function testStorage() {
-            logMsg("Opening IndexedDB...");
-            try {
-                let request = indexedDB.open("UniversalAIDB", 1);
-                
-                request.onupgradeneeded = function(e) {
-                    let db = e.target.result;
-                    if (!db.objectStoreNames.contains("profiles")) {
-                        db.createObjectStore("profiles", { keyPath: "id" });
-                    }
-                };
-
-                request.onsuccess = function(e) {
-                    logMsg("SUCCESS: IndexedDB connected! You can safely save API templates here.");
-                };
-
-                request.onerror = function(e) {
-                    logMsg("ERROR: " + e.target.error);
-                };
-            } catch (err) {
-                logMsg("CRASH: " + err.message);
+        // 2. Control Layout Visibility Management
+        function toggleConfig(show) {
+            const panel = document.getElementById("configPanel");
+            panel.style.display = show ? "flex" : "none";
+            if(show && !currentProfileId) {
+                document.getElementById("configTitle").textContent = "Create AI Engine Profile";
+                document.getElementById("deleteBtn").classList.add("hidden");
+                clearConfigForm();
             }
+        }
+
+        function clearConfigForm() {
+            document.getElementById("cfgName").value = "";
+            document.getElementById("cfgUrl").value = "";
+            document.getElementById("cfgModel").value = "";
+            document.getElementById("cfgKey").value = "";
+            document.getElementById("cfgStream").checked = true;
+        }
+
+        function handleProfileChange() {
+            const id = document.getElementById("profileSelect").value;
+            if (!id) {
+                currentProfileId = null;
+                activeProfile = null;
+                return;
+            }
+            currentProfileId = id;
+            
+            const transaction = db.transaction("profiles", "readonly");
+            const store = transaction.objectStore("profiles");
+            store.get(id).onsuccess = (e) => {
+                activeProfile = e.target.result;
+                // Populating updates into forms
+                document.getElementById("configTitle").textContent = "Modify: " + activeProfile.displayName;
+                document.getElementById("cfgName").value = activeProfile.displayName;
+                document.getElementById("cfgUrl").value = activeProfile.baseUrl;
+                document.getElementById("cfgModel").value = activeProfile.modelId;
+                document.getElementById("cfgKey").value = activeProfile.apiKey;
+                document.getElementById("cfgHeaders").value = JSON.stringify(activeProfile.headers, null, 2);
+                document.getElementById("cfgTemplate").value = activeProfile.payloadTemplate;
+                document.getElementById("cfgStream").checked = activeProfile.isStream;
+                document.getElementById("deleteBtn").classList.remove("hidden");
+            };
+        }
+
+        // 3. Profiles Mutation Lifecycle Engine (CRUD)
+        function saveProfile() {
+            const id = currentProfileId || "p_" + Date.now();
+            const profile = {
+                id: id,
+                displayName: document.getElementById("cfgName").value.trim(),
+                baseUrl: document.getElementById("cfgUrl").value.trim(),
+                modelId: document.getElementById("cfgModel").value.trim(),
+                apiKey: document.getElementById("cfgKey").value.trim(),
+                headers: JSON.parse(document.getElementById("cfgHeaders").value.trim()),
+                payloadTemplate: document.getElementById("cfgTemplate").value.trim(),
+                isStream: document.getElementById("cfgStream").checked
+            };
+
+            if(!profile.displayName || !profile.baseUrl) return alert("Please fill Display Name and API Endpoint.");
+
+            const transaction = db.transaction("profiles", "readwrite");
+            transaction.objectStore("profiles").put(profile);
+            transaction.oncomplete = () => {
+                currentProfileId = id;
+                loadProfiles();
+                toggleConfig(false);
+            };
+        }
+
+        function deleteProfile() {
+            if(!currentProfileId || !confirm("Delete this engine configuration completely?")) return;
+            const transaction = db.transaction("profiles", "readwrite");
+            transaction.objectStore("profiles").delete(currentProfileId);
+            transaction.oncomplete = () => {
+                currentProfileId = null;
+                activeProfile = null;
+                loadProfiles();
+                clearConfigForm();
+                toggleConfig(false);
+            };
+        }
+
+        // 4. Execution Engine: Variables Injection & SSE Network Channel Pipeline
+        async function sendMessage() {
+            const input = document.getElementById("messageInput");
+            const query = input.value.trim();
+            if(!query) return;
+            if(!activeProfile) return alert("Select an AI Profile configuration connection engine first.");
+
+            // Output User Query to View Screen Layout
+            appendMessage("user", query);
+            input.value = "";
+            conversationHistory.push({ role: "user", content: query });
+
+            // Create placeholder node allocations for layout updates
+            const msgDiv = appendMessage("assistant", "");
+            const reasoningBox = document.createElement("div");
+            reasoningBox.className = "reasoning-block hidden";
+            reasoningBox.innerHTML = '<div class="reasoning-title">🧠 Internal Core Logic Thinking</div><span class="reasoning-text"></span>';
+            msgDiv.appendChild(reasoningBox);
+
+            const contentSpan = document.createElement("span");
+            msgDiv.appendChild(contentSpan);
+
+            const container = document.getElementById("chatContainer");
+            container.scrollTop = container.scrollHeight;
+
+            try {
+                // Runtime Dynamic String Replacement Mapping Protocol
+                let template = activeProfile.payloadTemplate;
+                let finalPayloadString = template
+                    .replace('"{{MODEL}}"', JSON.stringify(activeProfile.modelId))
+                    .replace('{{MESSAGES}}', JSON.stringify(conversationHistory))
+                    .replace('{{STREAM}}', String(activeProfile.isStream));
+
+                const bodyPayload = JSON.parse(finalPayloadString);
+
+                // Compile Headers
+                const headers = new Headers();
+                headers.append("Content-Type", "application/json");
+                Object.entries(activeProfile.headers).forEach(([k, v]) => {
+                    headers.append(k, v.replace('{{API_KEY}}', activeProfile.apiKey));
+                });
+
+                const response = await fetch(activeProfile.baseUrl, {
+                    method: "POST",
+                    headers: headers,
+                    body: JSON.stringify(bodyPayload)
+                });
+
+                if (!response.ok) throw new Error("HTTP connection runtime exception: " + response.status);
+
+                // Handle Asynchronous Server-Sent Events Network Stream Pipes
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = "";
+                let fullResponseText = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop(); // Hold operational tail fragment tracking
+
+                    for (const line of lines) {
+                        let sanitizedLine = line.trim();
+                        if (!sanitizedLine.startsWith("data: ")) continue;
+                        let rawJsonData = sanitizedLine.replace("data: ", "").trim();
+                        if (rawJsonData === "[DONE]") break;
+
+                        try {
+                            const parsedData = JSON.parse(rawJsonData);
+                            const delta = parsedData.choices?.[0]?.delta;
+                            
+                            if (delta) {
+                                // Dynamic Branch Mapping Paths: Capture Reasoning Targets
+                                if (delta.reasoning_details || delta.reasoning) {
+                                    const rText = delta.reasoning_details || delta.reasoning;
+                                    reasoningBox.classList.remove("hidden");
+                                    reasoningBox.querySelector(".reasoning-text").textContent += rText;
+                                }
+                                
+                                // Standard View Token Output Appends
+                                if (delta.content) {
+                                    contentSpan.textContent += delta.content;
+                                    fullResponseText += delta.content;
+                                }
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                conversationHistory.push({ role: "assistant", content: fullResponseText });
+
+            } catch (err) {
+                contentSpan.style.color = "#ffdddd";
+                contentSpan.textContent = "\nExecution Engine Fault Intercept: " + err.message;
+            }
+        }
+
+        function appendMessage(role, text) {
+            const container = document.getElementById("chatContainer");
+            const div = document.createElement("div");
+            div.className = `message ${role}`;
+            div.textContent = text;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            return div;
         }
     </script>
 </body>
