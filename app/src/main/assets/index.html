@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal AI Client</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: #fff; padding: 20px; text-align: center; }
+        button { padding: 15px; margin-top: 20px; font-size: 16px; border-radius: 8px; background: #FF5722; color: white; border: none; font-weight: bold;}
+        #response { margin-top: 30px; font-family: monospace; background: #1e1e1e; padding: 15px; border-radius: 5px;}
+    </style>
+</head>
+<body>
+    <h2>Universal AI Environment</h2>
+    <p>Local Native Wrapper Active</p>
+    
+    <button onclick="testStorage()">Test Local Database</button>
+    <div id="response">Awaiting test...</div>
+
+    <script>
+        function logMsg(msg) {
+            document.getElementById('response').innerText = msg;
+        }
+
+        function testStorage() {
+            logMsg("Opening IndexedDB...");
+            try {
+                let request = indexedDB.open("UniversalAIDB", 1);
+                
+                request.onupgradeneeded = function(e) {
+                    let db = e.target.result;
+                    if (!db.objectStoreNames.contains("profiles")) {
+                        db.createObjectStore("profiles", { keyPath: "id" });
+                    }
+                };
+
+                request.onsuccess = function(e) {
+                    logMsg("SUCCESS: IndexedDB connected! You can safely save API templates here.");
+                };
+
+                request.onerror = function(e) {
+                    logMsg("ERROR: " + e.target.error);
+                };
+            } catch (err) {
+                logMsg("CRASH: " + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
